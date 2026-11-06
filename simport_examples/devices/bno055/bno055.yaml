@@ -1,0 +1,90 @@
+# A Bosch BNO055 IMU in UART mode, so the unmodified bno055 driver runs against it:
+#
+#   ros2 run bno055 bno055 --ros-args -p connection_type:=uart \
+#     -p uart_port:=/tmp/simport/bno055 -p uart_baudrate:=115200
+#
+# The driver reads and writes registers. simport turns each request into a call of
+# /bno055/registers; behavior.py next to this file keeps the registers and answers. When the
+# driver reads the 45 data registers, it answers with `data`: the latest /imu message, mapped
+# to the register layout below.
+#
+# Fusion outputs are approximated from the simulated IMU: linear acceleration is the
+# acceleration minus 9.81 m/s^2 on z (a level robot), gravity is constant, and the
+# magnetometer and Euler angles read 0.
+device: bno055
+port: { serial: /tmp/simport/bno055, baud: 115200 }
+
+# Requests: AA 01 reg len (read), or AA 00 reg len data... (write).
+framer:
+  plugin: simport/SyncLength
+  sync: [0xAA]
+  cases:
+    - when: { offset: 1, equals: 0x01 }
+      size: 4
+    - when: { offset: 1, equals: 0x00 }
+      length: { offset: 3 }
+      adjust: 4
+
+send:
+  # Registers 0x08..0x34 (little endian, UNIT_SEL = 0x83: m/s^2 and rad/s).
+  - name: data
+    from: { topic: /imu, type: sensor_msgs/msg/Imu }
+    stream: false                 # only when the driver reads them
+    endian: little
+    fields:
+      - start:   { u8: 0xBB }
+      - length:  { u8: 45 }
+      - accel_x: { i16, from: linear_acceleration.x, scale: 100.0 }   # 1 m/s^2 = 100 LSB
+      - accel_y: { i16, from: linear_acceleration.y, scale: 100.0 }
+      - accel_z: { i16, from: linear_acceleration.z, scale: 100.0 }
+      - mag_x:   { i16: 0 }                                           # 1 uT = 16 LSB
+      - mag_y:   { i16: 0 }
+      - mag_z:   { i16: 0 }
+      - gyro_x:  { i16, from: angular_velocity.x, scale: 900.0 }      # 1 rad/s = 900 LSB
+      - gyro_y:  { i16, from: angular_velocity.y, scale: 900.0 }
+      - gyro_z:  { i16, from: angular_velocity.z, scale: 900.0 }
+      - heading: { i16: 0 }                                           # 1 rad = 900 LSB
+      - roll:    { i16: 0 }
+      - pitch:   { i16: 0 }
+      - quat_w:  { i16, from: orientation.w, scale: 16384.0 }         # 1 = 16384 LSB
+      - quat_x:  { i16, from: orientation.x, scale: 16384.0 }
+      - quat_y:  { i16, from: orientation.y, scale: 16384.0 }
+      - quat_z:  { i16, from: orientation.z, scale: 16384.0 }
+      - lin_x:   { i16, from: linear_acceleration.x, scale: 100.0 }   # gravity removed
+      - lin_y:   { i16, from: linear_acceleration.y, scale: 100.0 }
+      - lin_z:   { i16, from: linear_acceleration.z, scale: 100.0, offset: -981.0 }
+      - grav_x:  { i16: 0 }
+      - grav_y:  { i16: 0 }
+      - grav_z:  { i16: 981 }
+      - temperature: { i8: 25 }                                       # degC
+
+  - name: read_response           # BB len data...
+    fields:
+      - start:  { u8: 0xBB }
+      - length: { u8, length_of: data }
+      - data:   bytes
+
+  - name: write_response          # EE status (01: write OK)
+    fields:
+      - start:  { u8: 0xEE }
+      - status: u8
+
+receive:
+  - name: read                    # AA 01 reg len
+    fields:
+      - start:  { u8: 0xAA }
+      - op:     { u8: 0x01 }
+      - reg:    u8
+      - length: u8
+    to: { service: /bno055/registers }
+    reply: [read_response, data]
+
+  - name: write                   # AA 00 reg len data...
+    fields:
+      - start:  { u8: 0xAA }
+      - op:     { u8: 0x00 }
+      - reg:    u8
+      - length: { u8, length_of: data }
+      - data:   bytes
+    to: { service: /bno055/registers }
+    reply: write_response

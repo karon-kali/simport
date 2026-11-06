@@ -1,0 +1,34 @@
+# A simulated GPS receiver speaking NMEA 0183 (GGA + RMC at 5 Hz) on an emulated 9600-baud
+# serial port, fed by sensor_msgs/NavSatFix (e.g. a Gazebo navsat sensor via ros_gz_bridge).
+# Point an NMEA driver (nmea_navsat_driver, gpsd, ...) at /tmp/simport/gps0.
+device: gps0
+port: { serial: /tmp/simport/gps0, baud: 9600 }   # ~150 bytes per fix at 5 Hz: fits
+
+send:
+  - name: gga
+    from: &fix { topic: /gps/fix, type: sensor_msgs/msg/NavSatFix }
+    rate: 5
+    stale_after: 2.0
+    # {name:format} placeholders are filled from `fields`; $begin/$end bound the checksum.
+    format: "${$begin}GPGGA,{utc:hhmmss.ss},{lat:nmea_lat.5},{lon:nmea_lon.5},{fix:%d},\
+      12,0.9,{alt:%.1f},M,0.0,M,,{$end}*{$checksum}\r\n"
+    checksum: nmea
+    fields:
+      utc: $wall_time_s   # GPS reports real UTC; use $time_s for simulation time instead
+      lat: latitude
+      lon: longitude
+      alt: altitude
+      fix: { from: status.status, offset: 1 }   # NavSatStatus -1/0/1/2 -> GGA quality 0/1/2/3
+
+  - name: rmc
+    from: *fix
+    rate: 5
+    stale_after: 2.0
+    format: "${$begin}GPRMC,{utc:hhmmss.ss},A,{lat:nmea_lat.5},{lon:nmea_lon.5},\
+      0.00,0.0,{date:ddmmyy},,,A{$end}*{$checksum}\r\n"
+    checksum: nmea
+    fields:
+      utc: $wall_time_s
+      date: $wall_time_s
+      lat: latitude
+      lon: longitude

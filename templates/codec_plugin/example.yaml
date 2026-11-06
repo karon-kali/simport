@@ -1,0 +1,12 @@
+# A device using the template codec: a rangefinder streaming 4-byte packets.
+#   ros2 run simport_ros simport_check $(ros2 pkg prefix my_simport_codec)/share/my_simport_codec/example.yaml
+device: my_ranger
+port: { serial: /tmp/simport/my_ranger, baud: 115200 }
+
+send:
+  - name: range
+    from: { topic: /range, type: sensor_msgs/msg/Range }
+    rate: 20
+    codec:
+      plugin: my_simport_codec/MyCodec
+      fields: { value: { from: range, scale: 1000.0 } }   # m -> mm

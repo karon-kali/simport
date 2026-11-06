@@ -1,0 +1,94 @@
+# Damiao DM-J motors on CAN-FD, laid out like an OpenArm v10 arm (motor ids 1-7, replies on
+# 0x11-0x17), driving simulated joints openarm_joint1..7. Runs the unmodified OpenArm driver
+# (openarm_hardware / openarm_can) against the simulation.
+#
+# simport decodes the driver's frames and hands them to the `DamiaoBus` behavior plugin
+# (damiao_bus.cpp next to this file), in process: it keeps the motors' state and parameters,
+# moves the joints and answers with motor states. In process, because OpenArm's control loop
+# sends over 10,000 frames per second.
+#
+# One-time setup of the virtual CAN-FD bus:
+#   sudo modprobe vcan
+#   sudo ip link add dev vcan0 type vcan mtu 72
+#   sudo ip link set up vcan0
+device: damiao
+port: { can: vcan0, fd: true }
+
+behavior:
+  plugin: simport_examples/DamiaoBus
+  motors:
+    - { id: 0x01, master_id: 0x11, type: DM8009, joint: openarm_joint1 }
+    - { id: 0x02, master_id: 0x12, type: DM8009, joint: openarm_joint2 }
+    - { id: 0x03, master_id: 0x13, type: DM4340, joint: openarm_joint3 }
+    - { id: 0x04, master_id: 0x14, type: DM4340, joint: openarm_joint4 }
+    - { id: 0x05, master_id: 0x15, type: DM4310, joint: openarm_joint5 }
+    - { id: 0x06, master_id: 0x16, type: DM4310, joint: openarm_joint6 }
+    - { id: 0x07, master_id: 0x17, type: DM4310, joint: openarm_joint7 }
+  joint_states: /sim/joint_states      # the simulator's joints
+  commands: /sim/{joint}/cmd_{mode}    # std_msgs/Float64; mode pos, vel or eff
+
+send:
+  # Motor feedback, on the motor's master id. Bits are listed from the least significant.
+  - name: state
+    fields:
+      - can_id: meta
+      - state: { u64, endian: big, bits: [t_rotor: 8,      # degC
+                                          t_mos: 8,        # degC
+                                          tau: 12,         # torque, over [-t_max, t_max]
+                                          dq: 12,          # velocity, over [-v_max, v_max]
+                                          q: 16,           # position, over [-p_max, p_max]
+                                          motor_id: 4,
+                                          status: 4] }     # 0 disabled, 1 enabled, 8+ fault
+
+  # Answer to a parameter frame: motor id, operation, register, value.
+  - name: param_reply
+    endian: little
+    fields:
+      - can_id: meta
+      - motor_id: u16
+      - op: u8
+      - rid: u8
+      - value: u32
+
+receive:
+  # Parameters, on CAN id 0x7FF: refresh (op CC), read (33), write (55), save (AA).
+  - name: param
+    endian: little
+    fields:
+      - can_id: meta
+      - motor_id: u16
+      - op: u8
+      - rid: u8
+      - value: bytes
+    match: { can_id: 0x7FF }
+    to: behavior
+
+  # FF FF FF FF FF FF FF cmd to the motor id: enable FC, disable FD, set zero FE, clear FB.
+  - name: command
+    fields:
+      - can_id: meta
+      - magic: { bytes: [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF] }
+      - cmd: u8
+    match: { can_id: [1, 2, 3, 4, 5, 6, 7] }
+    to: behavior
+
+  # MIT control to the motor id: targets and gains packed into 64 bits.
+  - name: mit
+    fields:
+      - can_id: meta
+      - mit: { u64, endian: big, bits: [tau: 12, kd: 12, kp: 12, dq: 12, q: 16] }
+    match: { can_id: [1, 2, 3, 4, 5, 6, 7] }
+    to: behavior
+
+  # Position-velocity (0x100 + id) and velocity (0x200 + id) control: floats.
+  - name: pos_vel
+    endian: little
+    fields: [can_id: meta, p: f32, v: f32]
+    match: { can_id: [0x101, 0x102, 0x103, 0x104, 0x105, 0x106, 0x107] }
+    to: behavior
+
+  - name: vel
+    endian: little
+    fields: [can_id: meta, v: f32]
+    match: { can_id: [0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x207] }
+    to: behavior

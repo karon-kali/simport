@@ -1,0 +1,25 @@
+# Ouster OS1-64 (firmware 3.2), part 1 of 3: the sensor's HTTP API, which drivers use to read
+# and set the configuration and to fetch the metadata (beam angles, data format, ports). The
+# lidar and IMU data come from lidar.yaml and imu.yaml.
+#
+# simport turns every HTTP request into a call of /os1/http and sends back the response;
+# behavior.py next to this file answers with the sensor's metadata (data/*.json).
+#
+# The emulated sensor is at 127.0.0.5; its API is on port 8080 rather than 80 so that no
+# privileges are needed. Run the driver with:
+#   ros2 launch ouster_ros sensor.launch.xml sensor_hostname:=127.0.0.5:8080 \
+#     lidar_port:=7502 imu_port:=7503
+# (the ports are where the emulated sensor sends; the driver's default 0 means random ports)
+device: os1_http
+port: { tcp: 127.0.0.5:8080 }
+framer: { plugin: simport/Http }      # cuts the TCP stream into HTTP requests
+
+send:
+  - name: response                    # status and body come from the service's answer
+    codec: { plugin: simport/HttpCodec, content_type: application/json }
+
+receive:
+  - name: request                     # method, path, query and body
+    codec: { plugin: simport/HttpCodec }
+    to: { service: /os1/http }
+    reply: response

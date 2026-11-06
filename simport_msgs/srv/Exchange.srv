@@ -1,0 +1,6 @@
+# A packet from the driver, decoded (`request`), and what to send back: zero or more packets
+# (`replies`), each encoded in the format of the receive message's `reply`. An empty list sends
+# nothing, like a device that does not answer.
+Record request
+---
+Record[] replies

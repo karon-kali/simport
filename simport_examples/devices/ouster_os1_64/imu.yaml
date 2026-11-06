@@ -1,0 +1,27 @@
+# Ouster OS1-64 (firmware 3.2), part 3 of 3: IMU packets on UDP port 7503 at 100 Hz, from a
+# sensor_msgs/Imu.
+#
+#   IMU packet, profile LEGACY (48 bytes, one UDP datagram, little endian)
+#   0   u64  system timestamp, ns (when the packet was sent)
+#   8   u64  accelerometer read time, ns
+#   16  u64  gyroscope read time, ns
+#   24  f32  linear acceleration x, y, z, in g
+#   36  f32  angular velocity x, y, z, in deg/s
+device: os1_imu
+port: { udp: 127.0.0.5:0, to: 127.0.0.1:7503 }
+
+send:
+  - name: imu
+    from: { topic: /sim/imu, type: sensor_msgs/msg/Imu }
+    rate: 100
+    endian: little
+    fields:
+      - sys_ts:   { u64, from: $time_ns }
+      - accel_ts: { u64, from: $stamp_ns }
+      - gyro_ts:  { u64, from: $stamp_ns }
+      - accel_x:  { f32, from: linear_acceleration.x, scale: 0.101971621 }   # m/s^2 -> g
+      - accel_y:  { f32, from: linear_acceleration.y, scale: 0.101971621 }
+      - accel_z:  { f32, from: linear_acceleration.z, scale: 0.101971621 }
+      - gyro_x:   { f32, from: angular_velocity.x, scale: 57.2957795 }       # rad/s -> deg/s
+      - gyro_y:   { f32, from: angular_velocity.y, scale: 57.2957795 }
+      - gyro_z:   { f32, from: angular_velocity.z, scale: 57.2957795 }

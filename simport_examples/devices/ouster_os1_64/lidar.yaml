@@ -1,0 +1,58 @@
+# Ouster OS1-64 (firmware 3.2), part 2 of 3: lidar packets on UDP port 7502, from an organized
+# sensor_msgs/PointCloud2 of 64 rows x 1024 columns, such as Gazebo's gpu_lidar cloud: bottom
+# beam first, column h at azimuth (h + 1) * 2*pi/1024 counter-clockwise.
+#
+# Ouster columns run clockwise from the x axis and beams top first, so the ranges are
+# transposed to columns of beams and reversed. The metadata served by behavior.py gives the
+# matching beam angles, with no azimuth offsets or pixel shifts.
+#
+# Lidar packet, profile RNG19_RFL8_SIG16_NIR16 (single return), little endian. One cloud is a
+# range image of 1024 columns x 64 beams; it becomes 64 UDP datagrams of 16 columns, 12544
+# bytes each:
+#   header (32 bytes)    packet type, frame id, init id + serial, thermal/shot status
+#   16 columns           timestamp (ns), measurement id, status, then 64 pixels of
+#                        range (19 bits, mm) + flags | reflectivity | - | signal | near IR | -
+#   footer (32 bytes)    24 reserved, then CRC-64/ECMA-182 of everything before it
+device: os1_lidar
+port:
+  udp: 127.0.0.5:0
+  to: 127.0.0.1:7502
+  bps: 70000000     # a real sensor sends its 640 packets/s evenly, not a cloud at a time
+  max_delay: 0.3
+
+send:
+  - name: lidar
+    from: { topic: /sim/lidar/points, type: sensor_msgs/msg/PointCloud2 }
+    rate: 10
+    endian: little
+    frames: auto
+    fields:
+      - packet_type: { u16: 1 }
+      - frame_id: { u16, counter: { per: record } }
+      - ids: { u64, bits: [init_id: { width: 24, value: 7109750 },        # must match the
+                           serial: { width: 40, value: 992100000064 }] }  # metadata
+      - pad: 4
+      - countdown_thermal_shutdown: { u8: 0 }
+      - countdown_shot_limiting: { u8: 0 }
+      - shutdown_status: { u16: 0 }
+      - pad: 12
+      - group:
+          count: 16                    # columns per packet
+          fields:
+            - timestamp: { u64, from: $stamp_ns, ramp: { step: 97656.25, count: 1024 } }
+            - measurement_id: { u16, element_index: true }
+            - status: { u16: 1 }
+            - group:
+                count: 64              # beams per column
+                fields:
+                  - pixel: { u32, bits: [
+                      range_mm: { width: 19, from: range, transpose: { rows: 64 },
+                                  reverse: true, scale: 1000.0, nonfinite: 0 },
+                      flags: { width: 5, value: 0 }] }
+                  - reflectivity: { u8: 50 }
+                  - pad: 1
+                  - signal: { u16: 200 }
+                  - near_ir: { u16: 0 }
+                  - pad: 2
+      - pad: 24
+      - crc: { u64, checksum: crc64_xz }

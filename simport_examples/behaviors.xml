@@ -1,0 +1,6 @@
+<library path="simport_examples_behaviors">
+  <class name="simport_examples/DamiaoBus" type="simport_examples::DamiaoBus"
+         base_class_type="simport::Behavior">
+    <description>Damiao DM-J motors on CAN, answered in process: MIT, position-velocity and velocity control, parameters, simulated joints.</description>
+  </class>
+</library>

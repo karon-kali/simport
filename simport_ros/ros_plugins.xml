@@ -1,0 +1,8 @@
+<library path="simport_ros_plugins">
+  <class name="simport/RosTopicSource" type="simport::RosTopicSource" base_class_type="simport::Source">
+    <description>Subscribe to a topic of any type and map message fields to codec fields.</description>
+  </class>
+  <class name="simport/PointCloud2Source" type="simport::PointCloud2Source" base_class_type="simport::Source">
+    <description>Subscribe to a sensor_msgs/PointCloud2 and provide point fields and ranges as arrays.</description>
+  </class>
+</library>

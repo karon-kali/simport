@@ -1,0 +1,75 @@
+# A Slamtec RPLIDAR A1 on a serial port, so the unmodified rplidar_ros driver runs against it:
+#
+#   ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/tmp/simport/rplidar0 \
+#     -p serial_baudrate:=115200 -p angle_compensate:=true -p topic_name:=driver/scan
+#
+# simport turns the driver's requests into calls of /rplidar0/request and sends the answers
+# back. behavior.py next to this file decides them (device info, health, scan-mode
+# configuration) and, between SCAN and STOP, publishes /scan on /rplidar0/scan at the A1's
+# 5.5 Hz.
+device: rplidar0
+port:
+  serial: /tmp/simport/rplidar0
+  baud: 115200
+  max_delay: 0.3   # a revolution (360 x 5 bytes) is queued at once and takes ~160 ms to send
+
+# Requests: A5 cmd (commands below 0x80), or A5 cmd size payload xor (0x80 and above).
+framer:
+  plugin: simport/SyncLength
+  sync: [0xA5]
+  cases:
+    - when: { offset: 1, mask: 0x80, equals: 0x00 }
+      size: 2
+    - length: { offset: 2 }
+      adjust: 4
+
+send:
+  # One revolution per message: one 5-byte sample per element of the mapped arrays. This map
+  # suits a 640-sample, 360-degree scan from -pi to pi (the TurtleBot 4 simulation): the RPLIDAR
+  # measures clockwise, so the ranges are reversed, then resized to the 360 samples an A1
+  # measures per revolution. Sample m is at m * 360/359 degrees.
+  - name: scan
+    from: { topic: /rplidar0/scan, type: sensor_msgs/msg/LaserScan }
+    frames: auto
+    fields:
+      - group:
+          count: 1
+          fields:
+            - flags: { u8, bits: [start: { width: 1, first_element: [1, 0] },
+                                  not_start: { width: 1, first_element: [0, 1] },
+                                  quality: { width: 6, value: 47 }] }
+            - angle: { u16, bits: [check: { width: 1, value: 1 },
+                                   angle_q6: { width: 15, element_index: { scale: 64.178273 } }] }
+            - dist_q2: { u16, from: ranges, reverse: true, resize: 360, scale: 4000.0,
+                         nonfinite: 0 }
+
+  # Answers: A5 5A, then size (30 bits) and send mode (2 bits) as a u32, the answer type, data.
+  - name: answer          # a single answer; the size is that of the data
+    fields:
+      - sync: { bytes: [0xA5, 0x5A] }
+      - size_mode: { u32, bits: [size: { width: 30, length_of: data },
+                                 mode: { width: 2, value: 0 }] }
+      - type: u8
+      - data: bytes
+
+  - name: stream_start    # opens a stream of `size`-byte samples
+    fields:
+      - sync: { bytes: [0xA5, 0x5A] }
+      - size_mode: { u32, bits: [size: 30, mode: { width: 2, value: 1 }] }
+      - type: u8
+
+receive:
+  - name: command         # A5 cmd
+    fields: [sync: { u8: 0xA5 }, cmd: u8]
+    to: { service: /rplidar0/request }
+    reply: [answer, stream_start]
+
+  - name: command_with_data   # A5 cmd size payload xor
+    fields:
+      - sync: { u8: 0xA5 }
+      - cmd: u8
+      - size: { u8, length_of: payload }
+      - payload: bytes
+      - xor: { u8, checksum: xor8 }
+    to: { service: /rplidar0/request }
+    reply: answer

@@ -1,0 +1,6 @@
+<library path="my_simport_behavior">
+  <class name="my_simport_behavior/MyBehavior" type="my_simport_behavior::MyBehavior"
+         base_class_type="simport::Behavior">
+    <description>Template behavior: answers PING with an ACK.</description>
+  </class>
+</library>

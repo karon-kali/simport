@@ -1,0 +1,22 @@
+device: imu0
+port: { serial: /tmp/simport/imu0, baud: 115200 }
+packet: packet.yaml
+
+send:
+  - name: imu_data
+    from: { topic: /imu, type: sensor_msgs/msg/Imu }
+    rate: 200
+    fields:
+      - kind: { u8: 1 }
+      - gx: { i16, from: angular_velocity.x, scale: 1000.0 }
+      - t_us: { u32, from: $time_us, overflow: wrap }
+
+  - name: ack
+    fields: [kind: { u8: 0x80 }, gx: i16]
+
+receive:
+  - name: command
+    fields: [kind: { u8: 2 }, gx: i16]
+    match: { gx: 1 }
+    to: { service: ~/command }
+    reply: ack

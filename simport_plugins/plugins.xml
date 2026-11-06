@@ -1,0 +1,50 @@
+<library path="simport_plugins">
+  <class name="simport/BinaryCodec" type="simport::plugins::BinaryCodec" base_class_type="simport::Codec">
+    <description>Binary packets described field by field in YAML, with an optional envelope.</description>
+  </class>
+  <class name="simport/SerialPty" type="simport::plugins::SerialPty" base_class_type="simport::Transport">
+    <description>Emulated serial port backed by a pseudo-terminal.</description>
+  </class>
+  <class name="simport/OnMessage" type="simport::plugins::OnMessage" base_class_type="simport::Trigger">
+    <description>Emit every source record immediately.</description>
+  </class>
+  <class name="simport/TextCodec" type="simport::plugins::TextCodec" base_class_type="simport::Codec">
+    <description>ASCII frames from a template, e.g. NMEA 0183 sentences.</description>
+  </class>
+  <class name="simport/FixedRate" type="simport::plugins::FixedRate" base_class_type="simport::Trigger">
+    <description>Emit the latest record at a fixed device rate on the device clock.</description>
+  </class>
+  <class name="simport/Bandwidth" type="simport::plugins::Bandwidth" base_class_type="simport::FrameFilter">
+    <description>Model a finite line rate; drop frames on transmit overrun.</description>
+  </class>
+  <class name="simport/OnRequest" type="simport::plugins::OnRequest" base_class_type="simport::Trigger">
+    <description>Never emit on its own; send only as the answer of a service.</description>
+  </class>
+  <class name="simport/Udp" type="simport::plugins::Udp" base_class_type="simport::Transport">
+    <description>Emulated network device speaking UDP.</description>
+  </class>
+  <class name="simport/FixedLength" type="simport::plugins::FixedLength" base_class_type="simport::Framer">
+    <description>Frames of a constant size.</description>
+  </class>
+  <class name="simport/Delimiter" type="simport::plugins::Delimiter" base_class_type="simport::Framer">
+    <description>Frames ending in a delimiter, e.g. text lines.</description>
+  </class>
+  <class name="simport/SyncLength" type="simport::plugins::SyncLength" base_class_type="simport::Framer">
+    <description>Binary frames starting with a sync pattern and carrying their length.</description>
+  </class>
+  <class name="simport/TcpServer" type="simport::plugins::TcpServer" base_class_type="simport::Transport">
+    <description>Emulated network device accepting TCP connections.</description>
+  </class>
+  <class name="simport/Http" type="simport::plugins::Http" base_class_type="simport::Framer">
+    <description>HTTP/1.x messages delimited by their header and Content-Length.</description>
+  </class>
+  <class name="simport/HttpCodec" type="simport::plugins::HttpCodec" base_class_type="simport::Codec">
+    <description>HTTP/1.1 requests (decode) and responses (encode) for device web APIs.</description>
+  </class>
+  <class name="simport/SocketCan" type="simport::plugins::SocketCan" base_class_type="simport::Transport">
+    <description>Emulated devices on a (virtual) CAN bus through Linux SocketCAN, CAN and CAN-FD.</description>
+  </class>
+  <class name="simport/SystemClock" type="simport::SystemClock" base_class_type="simport::Clock">
+    <description>Wall-clock time.</description>
+  </class>
+</library>

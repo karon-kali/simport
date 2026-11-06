@@ -1,0 +1,121 @@
+# simport device template
+# =======================
+#
+# Copy this file, rename it, and edit it. As it is, it runs: a sensor on a serial port that
+# streams IMU packets at 100 Hz and answers the driver's commands.
+#
+#   ros2 run simport_ros simport_check device.yaml        # check it, see the exact bytes
+#   ros2 launch simport_ros device.launch.py config_file:=$PWD/device.yaml
+#   python3 device_node.py                                 # answers the commands (optional)
+#
+# simport translates; it does not decide:
+#
+#   ROS topic ──▶ send ──▶ [ port ] ──▶ your driver          ROS data becomes packets
+#   your driver ──▶ [ port ] ──▶ receive ──▶ ROS topic        packets become ROS messages
+#                                        └─▶ ROS service ──▶ its answer becomes packets
+#
+# Anything a device decides (replies, modes, registers, start/stop) belongs in a ROS node of
+# yours that serves the service (device_node.py next to this file is a template), or, for
+# fast control loops, in a behavior plugin loaded into the device (behavior_plugin/).
+#
+# Numbers can be written in hex (0x1F). Relative paths are relative to this file.
+# Full reference: docs/configuration.md
+
+
+# ── 1. Name (required) ──────────────────────────────────────────────────────────────────────
+# Letters, digits and _. Used in logs, diagnostics and the ROS node name.
+device: my_sensor
+
+
+# ── 2. Port (required) ──────────────────────────────────────────────────────────────────────
+# The emulated hardware port your driver opens.
+port:
+  serial: /tmp/simport/my_sensor   # the path your driver opens instead of /dev/ttyUSB0
+  baud: 115200                     # sent packets are paced to this line rate
+  # framing: 8N1                   # data bits, parity, stop bits
+  # max_delay: 0.1                 # s a packet may wait for the line before it is dropped
+
+# Other ports:
+#   port: { udp: 127.0.0.2:2369, to: 127.0.0.1:2368 }   # the device's address, where packets
+#                                                       # go (`sender`: whoever sent last)
+#   port: { tcp: 127.0.0.5:8080 }                       # a TCP server, e.g. a web API
+#   port: { can: vcan0, fd: true }                      # a CAN bus (see docs/configuration.md)
+
+
+# ── 3. Packet envelope (optional) ───────────────────────────────────────────────────────────
+# What every packet has around its message: start bytes, a length, a checksum. Describe it
+# once; each message below is then only its body. simport fills in the length and checksum,
+# and on a serial or TCP port uses `start` and the length to cut the byte stream into packets.
+packet:
+  endian: little                   # default byte order of multi-byte fields
+  start: [0x5A]                    # every packet starts with these bytes
+  fields:
+    - length: { u8, length_of: body }      # filled in: the size of the body
+    - body                                 # the message goes here
+    - crc: { u16, checksum: crc16_modbus } # filled in: CRC over everything before it
+  # stuffing: { after: [0xFF, 0xFF, 0xFD], insert: 0xFD }   # byte stuffing in the body
+
+# Without an envelope, give each message all its bytes, and on a serial or TCP port say how
+# packets are told apart:
+#   framer: { plugin: simport/SyncLength, sync: [0xA5], length: { offset: 2, type: u8 },
+#             adjust: 4 }                         # sync bytes, length at offset 2, +4 bytes
+#   framer: { plugin: simport/FixedLength, size: 8 }
+#   framer: { plugin: simport/Delimiter, delimiter: "\r\n" }   # text lines
+#   framer: { plugin: simport/Http }                            # HTTP requests
+
+
+# ── 4. send (optional): packets to the driver ───────────────────────────────────────────────
+send:
+
+  # A data stream from a ROS topic.
+  - name: data
+    from: { topic: /imu, type: sensor_msgs/msg/Imu }   # any message type
+    rate: 100              # the sensor's own rate; without it: one packet per message
+    stale_after: 1.0       # s without new messages before the stream stops
+    fields:                # in wire order, one per line: `name: type` or `name: { type, ... }`
+      - type:    { u8: 0x01 }                      # a constant
+      - seq:     { u8, counter: true }             # counts up, wraps
+      - time_ms: { u32, from: $time_ms, overflow: wrap }        # the device clock
+      - gyro_z:  { i16, from: angular_velocity.z, scale: 1000.0 }   # rad/s -> mrad/s
+      - accel_z: { i16, from: linear_acceleration.z, scale: 100.0 } # m/s^2 -> cm/s^2
+      # types: u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 bool, bytes (the rest of the packet)
+      # more:  pad: 2                                skip two bytes (sent as 0)
+      #        flags: { u8, bits: [ready: 1, mode: 3, spare: 4] }   bit fields, LSB first
+      #        crc: { u16, checksum: crc16_ccitt_false, over: [type, accel_z] }
+      #        dist: { u16, from: ranges, reverse: true, nonfinite: 0 }   arrays: see `group`
+    # text protocols instead of `fields:` (NMEA and the like):
+    #   format: "${$begin}GPZDA,{t:hhmmss.ss}{$end}*{$checksum}\r\n"
+    #   checksum: nmea
+    #   fields: { t: $wall_time_s }
+
+  # A packet sent only as the answer of a service (no `from`).
+  - name: ack
+    fields:
+      - type:   { u8: 0x80 }
+      - cmd:    u8          # set by the service's answer
+      - status: u8
+
+
+# ── 5. receive (optional): packets from the driver ──────────────────────────────────────────
+# A packet goes to the FIRST receive whose fields decode it (constants must match) and whose
+# `match` holds.
+receive:
+
+  # Forwarded to a service; whatever it answers is sent back to the driver.
+  - name: command
+    fields:
+      - type: { u8: 0x02 }
+      - cmd:  u8
+      - arg:  u8
+    to: { service: /my_sensor/command }   # simport_msgs/srv/Exchange
+    reply: ack                            # how the answers are sent; a list allows several
+    # to: behavior                        # or answered in process by a `behavior:` plugin,
+    #                                     # for fast loops (templates/behavior_plugin)
+    # match: { cmd: [0x10, 0x11] }        # only these values (one value, or any of a list)
+
+  # Published on a topic (simport_msgs/msg/Record), one message per packet.
+  - name: settings
+    fields:
+      - type:    { u8: 0x03 }
+      - rate_hz: u16
+    to: { topic: /my_sensor/settings }    # default: ~/<name>

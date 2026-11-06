@@ -1,0 +1,6 @@
+endian: little
+start: [0xAA, 0x55]
+fields:
+  - length: { u8, length_of: body }
+  - body
+  - crc: { u8, checksum: sum8 }

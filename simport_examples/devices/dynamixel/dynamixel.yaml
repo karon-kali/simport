@@ -1,0 +1,37 @@
+# Two ROBOTIS Dynamixel XM430-W350 motors (IDs 11 and 12, Protocol 2.0, 1 Mbit/s) on a serial
+# port, driving simulated joints dxl_pan and dxl_tilt. Runs the unmodified ROBOTIS driver
+# (dynamixel_hardware_interface, with port_name /tmp/simport/dxl0) against the simulation.
+#
+# simport only translates packets: every instruction the driver sends becomes a call of
+# /dynamixel/instruction, and the status packets the service answers with go back to the
+# driver. behavior.py next to this file is that service: it keeps the motors' control tables
+# and moves the joints.
+device: dynamixel
+port: { serial: /tmp/simport/dxl0, baud: 1000000 }
+
+# Every Protocol 2.0 packet: FF FF FD 00, id, length (counts from the instruction to the CRC),
+# instruction and parameters, CRC-16. In the body, FF FF FD is sent as FF FF FD FD.
+packet:
+  endian: little
+  start: [0xFF, 0xFF, 0xFD, 0x00]
+  fields:
+    - id: u8
+    - length: { u16, length_of: [body, crc] }
+    - body
+    - crc: { u16, checksum: crc16_buypass }
+  stuffing: { after: [0xFF, 0xFF, 0xFD], insert: 0xFD }
+
+send:
+  - name: status          # motor -> driver
+    fields:
+      - instruction: { u8: 0x55 }
+      - error: u8
+      - params: bytes
+
+receive:
+  - name: instruction     # driver -> motors: ping, read, write, sync/bulk read and write, ...
+    fields:
+      - instruction: u8
+      - params: bytes
+    to: { service: /dynamixel/instruction }
+    reply: status

@@ -1,0 +1,14 @@
+build/
+install/
+log/
+*.pyc
+__pycache__/
+.vscode/
+.idea/
+compile_commands.json
+
+# Local Gazebo demos (not part of the repository)
+simport_gz_demo/
+
+# Internal design notes and plans (kept locally, not published)
+docs/design/

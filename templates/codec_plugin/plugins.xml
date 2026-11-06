@@ -1,0 +1,6 @@
+<library path="my_simport_codec">
+  <class name="my_simport_codec/MyCodec" type="my_simport_codec::MyCodec"
+         base_class_type="simport::Codec">
+    <description>Template codec: AA, a u16 value, and a proprietary check byte.</description>
+  </class>
+</library>
