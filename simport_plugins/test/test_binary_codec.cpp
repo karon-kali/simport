@@ -400,6 +400,47 @@ TEST(BinaryCodec, LengthInABitField)
   EXPECT_EQ(c.decode(Frame{wrong, {}, {}}, back).code, DecodeResult::Code::kBadLength);
 }
 
+TEST(BinaryCodec, ChecksumSplitAcrossBitFields)
+{
+  // A dense capsule recorded from a Slamtec RPLIDAR C1: the XOR of bytes 2..83 is split into
+  // the low nibbles of bytes 0 and 1, next to the sync nibbles 0xA and 0x5.
+  const char * const capsule =
+    "endian: little\n"
+    "fields:\n"
+    "  - sync1: { u8, bits: [cs_lo: { width: 4, checksum: xor8, over: [angle, distance] },"
+    " s1: { width: 4, value: 0xA }] }\n"
+    "  - sync2: { u8, bits: [cs_hi: { width: 4, checksum: xor8, checksum_bit: 4,"
+    " over: [angle, distance] }, s2: { width: 4, value: 0x5 }] }\n"
+    "  - angle: { u16, bits: [start_angle_q6: 15, new_scan: 1] }\n"
+    "  - group: { count: 40, fields: [distance: u16] }\n";
+  BinaryCodec c = make_codec(capsule);
+  const Bytes recorded{
+    0xA0, 0x53, 0xB5, 0x06, 0x33, 0x01, 0x36, 0x01, 0x35, 0x01, 0x34, 0x01,
+    0x37, 0x01, 0x39, 0x01, 0x3D, 0x01, 0x40, 0x01, 0x43, 0x01, 0x47, 0x01,
+    0x00, 0x00, 0x5F, 0x00, 0x5E, 0x00, 0x5F, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x9A, 0x01, 0x90, 0x01, 0x00, 0x00, 0x00, 0x00, 0x4E, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x35, 0x02, 0x3D, 0x02, 0x40, 0x02, 0x43, 0x02, 0x49, 0x02,
+    0x4E, 0x02, 0x51, 0x02, 0x54, 0x02, 0x57, 0x02, 0x60, 0x02, 0x6E, 0x02,
+    0x75, 0x02, 0x78, 0x02, 0x85, 0x02, 0x98, 0x02, 0xAB, 0x02, 0x00, 0x00,
+  };
+  ASSERT_EQ(recorded.size(), 84u);
+  Record r = Record::make(c.schema());
+  ASSERT_TRUE(c.decode(Frame{recorded, {}, {}}, r).ok());
+  EXPECT_EQ(std::get<std::uint64_t>(r.at("start_angle_q6")), 1717u);
+  EXPECT_EQ(std::get<std::uint64_t>(r.at("new_scan")), 0u);
+  EXPECT_EQ(std::get<std::vector<double>>(r.at("distance"))[1], 310.0);
+  EXPECT_EQ(encode_one(c, r), recorded);  // byte for byte, checksum nibbles included
+
+  Bytes corrupt = recorded;
+  corrupt[40] ^= 0x01;
+  EXPECT_EQ(c.decode(Frame{corrupt, {}, {}}, r).code, DecodeResult::Code::kBadChecksum);
+
+  const std::string e = error_of(
+    "fields: [a: u8, b: { u8, bits: [x: { width: 4, checksum: xor8, checksum_bit: 6 },"
+    " y: 4] }]\n");
+  EXPECT_NE(e.find("do not exist"), std::string::npos) << e;
+}
+
 // -- bits, groups, several packets per record --------------------------------------------------
 
 TEST(BinaryCodec, OnePacketPerElementWithBitFields)
