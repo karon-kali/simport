@@ -2,6 +2,11 @@
 Changelog for package simport_examples
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* ``rplidar_c1``: a Slamtec RPLIDAR C1 at 460800 baud, Standard and DenseBoost scanning, its
+  start-up handshake matching a recorded C1 byte for byte
+
 1.0.0 (2026-11-06)
 ------------------
 * One folder per device in ``devices/``: its device files, its behaviour (``behavior.py``, or
