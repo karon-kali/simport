@@ -85,13 +85,18 @@ class RplidarC1(Node):
 
     @staticmethod
     def c1_beams(msg):
-        """Resample the scan to the C1's beams (k * 0.75 deg clockwise); quality in intensities."""
+        """
+        Resample the scan to the C1's beams; quality in intensities.
+
+        Beam k is k * 0.75 degrees clockwise from the lidar's 0 degrees, which points along
+        -x of the laser frame: rplidar_ros publishes the beam at angle theta as pi - theta.
+        """
         out = LaserScan()
         out.header = msg.header
         out.range_min, out.range_max = msg.range_min, msg.range_max
         n = len(msg.ranges)
         for k in range(BEAMS):
-            angle = -2.0 * math.pi * k / BEAMS            # clockwise -> ROS counter-clockwise
+            angle = math.pi - 2.0 * math.pi * k / BEAMS   # as rplidar_ros will publish it
             i = round((angle - msg.angle_min) / msg.angle_increment) if msg.angle_increment else 0
             r = msg.ranges[i % n] if n else float('inf')
             hit = math.isfinite(r) and msg.range_min <= r <= msg.range_max
