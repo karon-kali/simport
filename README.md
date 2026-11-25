@@ -6,6 +6,11 @@
 
 **Run your real robot drivers against simulation.**
 
+https://github.com/user-attachments/assets/d81bb4ba-df23-4c4a-9978-fcea7f66c713
+
+*Slamtec's unmodified `rplidar_ros` driver on a real RPLIDAR C1, then on simport's C1 fed by
+Gazebo: the same command, the same `/dev/ttyUSB0`, the same answers.*
+
 Built and tested on ROS 2 Jazzy (Ubuntu 24.04); the CI badge shows the current state of `main`.
 
 simport puts simulated sensors and motors on emulated hardware ports (serial ports, UDP and
