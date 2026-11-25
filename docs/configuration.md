@@ -260,9 +260,9 @@ saturate (clip), unless the field has `overflow: wrap`.
 | `endian: big \| little` | Byte order of this field (default: the message's `endian`, then the envelope's, then `little`). |
 | `overflow: wrap` | Keep the low bits instead of clipping (timestamps that wrap). |
 | `counter: true` or `{ start, step, per: packet \| record }` | Counts up by itself, wraps. |
-| `checksum: <name>` | Filled in; see [Checksums](#checksums). Covers everything before it, or `over: first` (from `first` to the field before the checksum), or `over: [first, last]`. |
+| `checksum: <name>` | Filled in; see [Checksums](#checksums). Covers everything before it, or `over: first` (from `first` to the field before the checksum), or `over: [first, last]`. A field inside a `group` in a range stands for the whole group. |
 | `length_of: name` or `[names]` | Filled in: the byte size of those fields (`body`: the whole message). |
-| `bits: [name: width, ...]` | Bit fields, least significant first. Each is `name: width` or `name: { width, value, overflow, from, ..., length_of }`. |
+| `bits: [name: width, ...]` | Bit fields, least significant first. Each is `name: width` or `name: { width, value, overflow, from, ..., length_of, checksum }`. A checksum may be split across bit fields: `checksum_bit: N` says which of its bits a field holds (from bit N, as many as the field is wide). |
 | `from`, `scale`, ... | Where the value comes from; see [below](#where-values-come-from). |
 
 Other entries:

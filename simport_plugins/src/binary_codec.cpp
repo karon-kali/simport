@@ -330,11 +330,13 @@ void BinaryCodec::parse_items(
       pad.offset = seg_size;
       pad.after_variable = segment == Segment::kBody && variable_.has_value();
       seg_size += pad.size;
+      pad.order = order_++;
       fields_.push_back(std::move(pad));
     } else {
+      const std::size_t pending_before = pending_checksums_.size();
       parse_field(name, spec, segment, groups, schema);
-      if (fields_.back().checksum) {
-        pending_checksums_.back().previous = previous;
+      for (std::size_t i = pending_before; i < pending_checksums_.size(); ++i) {
+        pending_checksums_[i].previous = previous;
       }
     }
     if (groups.empty()) {
@@ -398,6 +400,7 @@ void BinaryCodec::parse_field(
     option("value");
 
   Field field;
+  field.order = order_++;  // its position in the packet, for ranges (every kind of field)
   field.name = name;
   field.type = info->type;
   field.segment = segment;
@@ -508,7 +511,7 @@ void BinaryCodec::parse_field(
         bits.width = bit_spec.as<std::uint8_t>();
       } else {
         std::vector<std::string> allowed{"width", "value", "overflow", "frame_index",
-          "element_index", "first_element", "length_of"};
+          "element_index", "first_element", "length_of", "checksum", "over", "checksum_bit"};
         allowed.insert(allowed.end(), kMappingKeys.begin(), kMappingKeys.end());
         bit_spec.expect_keys(allowed);
         bits.width = bit_spec.get<std::uint8_t>("width");
@@ -533,8 +536,38 @@ void BinaryCodec::parse_field(
           }
           bits.length = true;
           pending_lengths_.push_back(
-            Pending{fields_.size(), bit_spec["length_of"], std::nullopt, lengths_.size()});
+            Pending{fields_.size(), bit_spec["length_of"], std::nullopt, lengths_.size(), 0});
           lengths_.push_back(LengthField{fields_.size(), {}, field.bits.size()});
+        }
+        if (bit_spec.has("over") && !bit_spec.has("checksum")) {
+          bit_spec["over"].error("'over' gives a checksum's range; this bit field has no "
+            "'checksum'");
+        }
+        if (bit_spec.has("checksum_bit") && !bit_spec.has("checksum")) {
+          bit_spec["checksum_bit"].error("'checksum_bit' applies to a 'checksum' bit field");
+        }
+        if (bit_spec.has("checksum")) {
+          if (bits.computed.set() || bits.constant || bits.length) {
+            bit_spec.error("a bit field is one of: a constant, computed, 'length_of' or "
+              "'checksum'");
+          }
+          if (in_group) {
+            bit_spec.error("checksums cannot be inside a group");
+          }
+          Checksum algorithm = Checksum::parse(bit_spec["checksum"], {});
+          const auto source_bit = bit_spec.get<unsigned>("checksum_bit", 0);
+          const auto width = bit_spec.get<unsigned>("width");
+          if (source_bit + width > 8 * algorithm.width_bytes()) {
+            bit_spec.error("checksum '" + algorithm.name() + "' has " +
+              std::to_string(8 * algorithm.width_bytes()) + " bits; bits " +
+              std::to_string(source_bit) + ".." + std::to_string(source_bit + width - 1) +
+              " do not exist");
+          }
+          bits.checksum = true;
+          pending_checksums_.push_back(
+            Pending{fields_.size(), bit_spec, std::nullopt, 0, checksums_.size()});
+          checksums_.push_back(ChecksumField{std::move(algorithm), fields_.size(), {}, {},
+              field.bits.size(), source_bit});
         }
         source = bit_spec;
       }
@@ -550,7 +583,8 @@ void BinaryCodec::parse_field(
         b.error("bit fields add up to " + std::to_string(shift) + " bits but '" + type_name +
           "' holds " + std::to_string(8 * field.size));
       }
-      const bool computed = bits.constant.has_value() || bits.computed.set() || bits.length;
+      const bool computed = bits.constant.has_value() || bits.computed.set() || bits.length ||
+        bits.checksum;
       try {
         bits.index = schema.add(FieldSpec{bits.name, in_group ? ValueKind::kFloatArray :
               ValueKind::kUint, computed ? FieldRole::kComputed : FieldRole::kInput});
@@ -643,8 +677,10 @@ void BinaryCodec::parse_field(
         " bytes but field '" + name + "' holds only " + std::to_string(field.size));
     }
     field.checksum = checksums_.size();
-    checksums_.push_back(ChecksumField{std::move(algorithm), fields_.size(), {}, {}});
-    pending_checksums_.push_back(Pending{fields_.size(), spec, std::nullopt});
+    pending_checksums_.push_back(
+      Pending{fields_.size(), spec, std::nullopt, 0, checksums_.size()});
+    checksums_.push_back(
+      ChecksumField{std::move(algorithm), fields_.size(), {}, {}, std::nullopt, 0});
   }
   if (is_length) {
     if (info->kind != ValueKind::kUint) {
@@ -653,9 +689,8 @@ void BinaryCodec::parse_field(
     field.length = lengths_.size();
     lengths_.push_back(LengthField{fields_.size(), {}, std::nullopt});
     pending_lengths_.push_back(
-      Pending{fields_.size(), option("length_of"), std::nullopt, lengths_.size() - 1});
+      Pending{fields_.size(), option("length_of"), std::nullopt, lengths_.size() - 1, 0});
   }
-  field.order = order_++;
   seg_size += field.size;
   fields_.push_back(std::move(field));
 }
@@ -670,9 +705,7 @@ BinaryCodec::Part BinaryCodec::part_named(const Config & node, const std::string
   }
   for (std::size_t i = 0; i < fields_.size(); ++i) {
     if (fields_[i].name == name) {
-      if (fields_[i].in_group()) {
-        node.error("'" + name + "' is inside a group; name the fields around the group");
-      }
+      // A field inside a group stands for the whole group, every repetition (see span()).
       if (stuffing_ && fields_[i].segment == Segment::kBody) {
         node.error("with stuffing, ranges can name envelope fields and 'body', not '" + name +
           "' inside the body");
@@ -691,7 +724,7 @@ std::size_t BinaryCodec::order_of(const Part & part) const
 void BinaryCodec::resolve_ranges()
 {
   for (Pending & p : pending_checksums_) {
-    ChecksumField & c = checksums_[*fields_[p.field].checksum];
+    ChecksumField & c = checksums_[p.checksum];
     const Config over = p.node["over"];
     std::optional<Part> from = first_item_;
     std::optional<Part> to = p.previous;
@@ -978,7 +1011,7 @@ void BinaryCodec::encode_field(
       std::uint64_t v = 0;
       if (b.constant) {
         v = *b.constant;
-      } else if (b.length) {
+      } else if (b.length || b.checksum) {
         v = 0;  // set once the packet is assembled
       } else {
         const Value value = b.computed.set() ? b.computed.evaluate(frame, element) :
@@ -1115,8 +1148,17 @@ void BinaryCodec::encode(const Record & record, std::vector<Frame> & out)
       const std::size_t begin = span(c.from, layout).first;
       const std::size_t end = span(c.to, layout).second;
       const Field & f = fields_[c.field];
-      store(packet + span(Part{c.field}, layout).first,
-        c.algorithm.compute(ByteView(packet + begin, end - begin)), f.size, f.big_endian);
+      const std::uint64_t value = c.algorithm.compute(ByteView(packet + begin, end - begin));
+      std::uint8_t * at = packet + span(Part{c.field}, layout).first;
+      if (c.bits) {
+        const Bits & b = f.bits[*c.bits];
+        const std::uint64_t mask = mask_of(b.width);
+        std::uint64_t word = load(at, f.size, f.big_endian) & ~(mask << b.shift);
+        word |= ((value >> c.source_bit) & mask) << b.shift;
+        store(at, word, f.size, f.big_endian);
+      } else {
+        store(at, value, f.size, f.big_endian);
+      }
     }
     if (meta_can_id_) {
       frame.meta.can_id = saturate_cast<std::uint32_t>(record[*meta_can_id_]);
@@ -1162,9 +1204,13 @@ DecodeResult BinaryCodec::decode(const Frame & frame, Record & out)
     const Field & f = fields_[c.field];
     const std::size_t begin = span(c.from, layout).first;
     const std::size_t end = span(c.to, layout).second;
-    const std::uint64_t expected = c.algorithm.compute(ByteView(base + begin, end - begin));
-    const std::uint64_t got = load(base + span(Part{c.field}, layout).first, f.size,
-        f.big_endian);
+    std::uint64_t expected = c.algorithm.compute(ByteView(base + begin, end - begin));
+    std::uint64_t got = load(base + span(Part{c.field}, layout).first, f.size, f.big_endian);
+    if (c.bits) {
+      const Bits & b = f.bits[*c.bits];
+      expected = (expected >> c.source_bit) & mask_of(b.width);
+      got = (got >> b.shift) & mask_of(b.width);
+    }
     if (expected != got) {
       return DecodeResult::failure(
         DecodeResult::Code::kBadChecksum,

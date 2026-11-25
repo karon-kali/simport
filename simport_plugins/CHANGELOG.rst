@@ -2,6 +2,13 @@
 Changelog for package simport_plugins
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* BinaryCodec: checksums in bit fields, optionally split across several (``checksum_bit``),
+  as in RPLIDAR dense capsules; a field inside a group may name the group in a range
+* BinaryCodec: fix checksum and length ranges that name bit fields, variable-length fields or
+  padding (their position in the packet was not recorded)
+
 1.0.0 (2026-11-06)
 ------------------
 * BinaryCodec rewritten for the field syntax (``name: type`` or ``name: { type, ... }``): packet

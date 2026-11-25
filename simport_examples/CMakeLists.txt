@@ -50,6 +50,7 @@ if(BUILD_TESTING)
 
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_dynamixel devices/dynamixel/test_behavior.py)
+  ament_add_pytest_test(test_rplidar_c1 devices/rplidar_c1/test_behavior.py)
 endif()
 
 ament_package()

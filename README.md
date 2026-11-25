@@ -6,6 +6,11 @@
 
 **Run your real robot drivers against simulation.**
 
+https://github.com/user-attachments/assets/d81bb4ba-df23-4c4a-9978-fcea7f66c713
+
+*Slamtec's unmodified `rplidar_ros` driver on a real RPLIDAR C1, then on simport's C1 fed by
+Gazebo: the same command, the same `/dev/ttyUSB0`, the same answers.*
+
 Built and tested on ROS 2 Jazzy (Ubuntu 24.04); the CI badge shows the current state of `main`.
 
 simport puts simulated sensors and motors on emulated hardware ports (serial ports, UDP and
@@ -76,6 +81,7 @@ file(s), and, where the device decides something, the behaviour that answers the
 | Example | Port | Behaviour | Shows |
 |---|---|---|---|
 | `rplidar_a1` | `/tmp/simport/rplidar0` | `behavior.py`: device info, health, scan modes, scanning between SCAN and STOP | Slamtec RPLIDAR A1, scans from a `LaserScan` |
+| `rplidar_c1` | `/tmp/simport/rplidar_c1` | `behavior.py`: a real C1's answers, Standard and DenseBoost scanning | Slamtec RPLIDAR C1 at 460800 baud; its start-up handshake matches a recorded C1 byte for byte |
 | `bno055` | `/tmp/simport/bno055` | `behavior.py`: the register map | Bosch BNO055 in UART mode, data from an `Imu` |
 | `nmea_gps` | `/tmp/simport/gps0` | none: it only streams | NMEA GGA + RMC at 5 Hz on a 9600-baud line |
 | `ouster_os1_64` | `127.0.0.5`: HTTP `8080`, UDP to `7502`/`7503` | `behavior.py`: the HTTP API | Ouster OS1-64, lidar packets from a `PointCloud2`, IMU packets |
@@ -100,6 +106,7 @@ Point the device's unmodified ROS 2 driver at the emulated port:
 | Example | Driver | Settings |
 |---|---|---|
 | `rplidar_a1` | `rplidar_ros` | `ros2 run rplidar_ros rplidar_composition --ros-args -p serial_port:=/tmp/simport/rplidar0 -p serial_baudrate:=115200` |
+| `rplidar_c1` | Slamtec's `rplidar_ros` (`ros2` branch) | `serial_port: /tmp/simport/rplidar_c1`, `serial_baudrate: 460800` |
 | `bno055` | `bno055` | `connection_type: uart`, `uart_port: /tmp/simport/bno055` |
 | `ouster_os1_64` | `ouster_ros` | `ros2 launch ouster_ros sensor.launch.xml sensor_hostname:=127.0.0.5:8080 lidar_port:=7502 imu_port:=7503` |
 | `nmea_gps` | `nmea_navsat_driver` | `port: /tmp/simport/gps0`, `baud: 9600` |

@@ -122,7 +122,8 @@ private:
     std::optional<std::size_t> index;
     std::optional<std::uint64_t> constant;
     Computed computed;
-    bool length = false;  ///< filled in by a LengthField
+    bool length = false;    ///< filled in by a LengthField
+    bool checksum = false;  ///< filled in by a ChecksumField
   };
 
   struct Group
@@ -175,6 +176,8 @@ private:
     std::size_t field;
     Part from;
     Part to;
+    std::optional<std::size_t> bits;  ///< the bit field of `field` holding (part of) it
+    unsigned source_bit = 0;          ///< with `bits`: the checksum's first bit it holds
   };
 
   struct LengthField
@@ -190,6 +193,7 @@ private:
     Config node;
     std::optional<Part> previous;  ///< the item before the field (default end of a range)
     std::size_t length = 0;        ///< for a length: its index in lengths_
+    std::size_t checksum = 0;      ///< for a checksum: its index in checksums_
   };
 
   struct Layout;  // byte positions of one packet
